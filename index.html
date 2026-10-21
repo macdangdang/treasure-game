@@ -1,0 +1,513 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>寻宝游戏</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
+        /* ================= 全局 ================= */
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #111; font-family: 'Noto Serif SC', sans-serif; user-select: none; }
+        #game-viewport { position: relative; width: 100vw; height: 100vh; overflow: hidden; background: linear-gradient(to bottom, #2b4162 0%, #12100e 100%); transition: background 2s; }
+
+        .bg-mountains {
+            position: absolute; bottom: 20vh; width: 200vw; height: 50vh;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 20" preserveAspectRatio="none"><path d="M0 20 L10 5 L20 15 L35 2 L50 18 L65 5 L80 15 L100 0 L100 20 Z" fill="rgba(255,255,255,0.05)"/></svg>');
+            background-size: cover; z-index: 1; transition: transform 0.1s linear;
+        }
+
+        #world { position: absolute; bottom: 0; left: 0; width: 1000vw; height: 100vh; z-index: 10; }
+        .ground { position: absolute; bottom: 0; width: 100%; height: 20vh; background: linear-gradient(to bottom, #1e3c1e 0%, #0d1a0d 100%); border-top: 2px solid rgba(255,255,255,0.2); box-shadow: 0 -10px 30px rgba(0,0,0,0.8); z-index: 5; }
+
+        /* ================= 主角 ================= */
+        #hero { position: absolute; bottom: 20vh; left: 10vw; width: 60px; height: 100px; z-index: 100; transition: transform 0.1s; }
+        .hero-cape { position: absolute; bottom: 20px; left: 10px; width: 40px; height: 60px; background: linear-gradient(135deg, #e74c3c, #c0392b); border-radius: 20px 20px 5px 5px; box-shadow: inset -5px -5px 10px rgba(0,0,0,0.5); }
+        .hero-head { position: absolute; top: 0; left: 15px; width: 30px; height: 35px; background: #f5cba7; border-radius: 50% 50% 40% 40%; z-index: 2; box-shadow: inset -3px -3px 5px rgba(0,0,0,0.3); }
+        .hero-hair { position: absolute; top: -5px; left: 10px; width: 40px; height: 25px; background: #f1c40f; border-radius: 50% 50% 0 0; z-index: 3; }
+        .walking { animation: hero-walk 0.4s infinite alternate; }
+        @keyframes hero-walk { 0% { transform: translateY(0); } 100% { transform: translateY(-8px); } }
+
+        /* ================= 场景物件 ================= */
+        /* 小屋 */
+        #house { position: absolute; left: 80vw; bottom: 20vh; width: 200px; height: 200px; z-index: 20; display: flex; flex-direction: column; align-items: center; }
+        .roof { width: 0; height: 0; border-left: 100px solid transparent; border-right: 100px solid transparent; border-bottom: 80px solid #8e44ad; }
+        .walls { width: 150px; height: 120px; background: linear-gradient(to right, #d2b48c, #a0522d); border: 2px solid #5c4033; }
+        
+        /* 河流与小船 */
+        #river { position: absolute; left: 160vw; bottom: 0; width: 400px; height: 18vh; z-index: 8; background: linear-gradient(to bottom, #3498db, #2980b9); border-top: 3px solid rgba(255,255,255,0.5); box-shadow: inset 0 20px 20px rgba(0,0,0,0.5); }
+        
+        /* 停靠在岸边的船 */
+        #boat { position: absolute; left: 152vw; bottom: 15vh; width: 100px; height: 40px; z-index: 95; transition: left 3s linear; }
+        .boat-body { width: 100px; height: 40px; background: #8b4513; border-radius: 0 0 50px 50px; border: 2px solid #3e2723; box-shadow: inset 0 -10px 20px rgba(0,0,0,0.5); position: relative; }
+        .boat-mast { position: absolute; top: -60px; left: 45px; width: 10px; height: 60px; background: #5c4033; }
+        .boat-sail { position: absolute; top: -60px; left: 5px; width: 0; height: 0; border-left: 40px solid transparent; border-right: 40px solid transparent; border-bottom: 50px solid rgba(255,255,255,0.8); }
+
+        /* ================= 精细遗迹建模 ================= */
+        #ruins { position: absolute; left: 260vw; bottom: 20vh; width: 350px; height: 400px; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; }
+        /* 遗迹顶部拱门 (破损) */
+        .ruins-arch { 
+            width: 300px; height: 150px; border: 30px solid #4a545e; border-bottom: 0; border-radius: 150px 150px 0 0; 
+            box-sizing: border-box; position: relative; box-shadow: inset 0 0 30px rgba(0,0,0,0.8), 0 5px 15px rgba(0,0,0,0.5); 
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="50" height="50"><rect width="50" height="50" fill="%234a545e"/><line x1="0" y1="25" x2="50" y2="25" stroke="%23333" stroke-width="2"/><line x1="25" y1="0" x2="25" y2="25" stroke="%23333" stroke-width="2"/></svg>');
+        }
+        .ruins-arch::after { content: ''; position: absolute; top: 20px; left: 50%; transform: translateX(-50%); width: 60px; height: 10px; background: #00e5ff; box-shadow: 0 0 20px #00e5ff; border-radius: 5px; } /* 发光符文 */
+        /* 遗迹中间断壁 */
+        .ruins-wall { width: 250px; height: 180px; background: #3b424a; position: relative; box-shadow: inset -20px 0 30px rgba(0,0,0,0.6); border-left: 15px solid #2c3338; border-right: 15px solid #2c3338; }
+        /* 砖块纹理 */
+        .ruins-wall::before { content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: repeating-linear-gradient(0deg, transparent, transparent 30px, rgba(0,0,0,0.3) 30px, rgba(0,0,0,0.3) 32px), repeating-linear-gradient(90deg, transparent, transparent 40px, rgba(0,0,0,0.3) 40px, rgba(0,0,0,0.3) 42px); opacity: 0.5; }
+        /* 遗迹底层阶梯基座 */
+        .ruins-base { width: 350px; height: 60px; background: #2c3338; clip-path: polygon(10% 0, 90% 0, 100% 100%, 0% 100%); box-shadow: inset 0 10px 20px rgba(0,0,0,0.8); border-bottom: 3px solid #111; }
+
+        /* ================= 迷宫系统 ================= */
+        #maze-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; background: #1a1a1a; display: none; flex-direction: column; justify-content: center; align-items: center; }
+        #maze-canvas { background: #000; border: 4px solid #444; box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+        #maze-hint { color: #fff; margin-top: 20px; font-size: 18px; letter-spacing: 1px; }
+
+        /* ================= 战斗 ================= */
+        #combat-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 500; background: radial-gradient(circle at center, transparent 10%, rgba(0,0,0,0.85) 100%); display: none; align-items: flex-end; justify-content: space-between; padding: 0 15vw 25vh; box-sizing: border-box; }
+        .combat-char { position: relative; width: 80px; height: 140px; transition: transform 0.1s; }
+        .combat-hero-body { width: 60px; height: 100px; background: linear-gradient(135deg, #e74c3c, #8e44ad); border-radius: 30px 30px 10px 10px; position: absolute; bottom: 0; box-shadow: inset -10px -10px 20px rgba(0,0,0,0.8); }
+        .combat-guardian { width: 180px; height: 280px; position: relative; }
+        .guardian-body { width: 180px; height: 250px; background: linear-gradient(to right, #34495e, #1a252f); border-radius: 30px 30px 10px 10px; position: absolute; bottom: 0; box-shadow: 10px 10px 30px rgba(0,0,0,0.9), inset -20px -20px 40px rgba(0,0,0,0.8); }
+        .guardian-eye { position: absolute; top: 60px; left: 50%; transform: translateX(-50%); width: 40px; height: 10px; background: #e74c3c; border-radius: 5px; box-shadow: 0 0 20px #e74c3c, 0 0 40px #e74c3c; }
+        .guardian-arm { position: absolute; bottom: 80px; width: 40px; height: 120px; background: #2c3e50; border-radius: 20px; box-shadow: inset -5px -5px 10px rgba(0,0,0,0.5); }
+        .guardian-arm.left { left: -20px; transform-origin: top center; transform: rotate(20deg); }
+        .guardian-arm.right { right: -20px; transform-origin: top center; transform: rotate(-20deg); }
+        
+        .attack-warning { position: absolute; top: -50px; left: 50%; transform: translateX(-50%); width: 100px; height: 20px; background: rgba(231, 76, 60, 0.8); border-radius: 10px; display: none; animation: blink 0.3s infinite alternate; }
+        @keyframes blink { from { opacity: 1; } to { opacity: 0.2; } }
+
+        .hp-bar-container { position: absolute; top: -40px; left: 50%; transform: translateX(-50%); width: 120px; height: 16px; background: #000; border-radius: 8px; border: 2px solid #fff; overflow: hidden; }
+        .hp-fill { width: 100%; height: 100%; transition: width 0.3s; }
+        .hp-green { background: linear-gradient(to right, #2ecc71, #27ae60); }
+        .hp-red { background: linear-gradient(to right, #e74c3c, #c0392b); }
+        .shield { position: absolute; width: 120px; height: 180px; border: 6px solid #3498db; border-radius: 50%; box-shadow: 0 0 30px #3498db, inset 0 0 20px #3498db; background: rgba(52, 152, 219, 0.2); display: none; pointer-events: none; z-index: 10; }
+        .slash { position: absolute; width: 150px; height: 150px; background: radial-gradient(ellipse at center, rgba(255,255,255,0.9) 0%, transparent 60%); border-radius: 50%; animation: slash-anim 0.2s forwards; pointer-events: none; }
+        @keyframes slash-anim { from { transform: scale(0.3) rotate(-90deg); opacity: 1; } to { transform: scale(1.5) rotate(30deg); opacity: 0; } }
+
+        /* ================= 结局 ================= */
+        #game-over-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 2000; background: rgba(0,0,0,0.9); display: none; flex-direction: column; justify-content: center; align-items: center; backdrop-filter: blur(10px); opacity: 0; transition: opacity 1s; }
+        #game-over-screen h1 { color: #f1c40f; font-size: 60px; text-shadow: 0 0 20px #f1c40f; margin-bottom: 50px; letter-spacing: 10px; }
+        #restart-btn { padding: 15px 40px; font-size: 22px; background: transparent; color: #fff; border: 2px solid #fff; border-radius: 30px; cursor: pointer; transition: all 0.3s; }
+        #restart-btn:hover { background: #fff; color: #000; box-shadow: 0 0 20px #fff; }
+
+        /* ================= UI ================= */
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; z-index: 1000; pointer-events: none; }
+        #dialog-box { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.3); color: #ecf0f1; padding: 15px 40px; font-size: 20px; border-radius: 10px; opacity: 0; transition: opacity 0.3s; text-align: center; min-width: 300px; }
+        #prompt { position: absolute; bottom: 25vh; left: 50%; transform: translateX(-50%); background: rgba(255,255,255,0.9); color: #111; padding: 8px 20px; border-radius: 20px; font-weight: bold; display: none; box-shadow: 0 0 20px rgba(255,255,255,0.5); animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { transform: translate(-50%, 0) scale(1); } to { transform: translate(-50%, -5px) scale(1.05); } }
+
+        #start-btn { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); padding: 15px 50px; font-size: 24px; background: linear-gradient(to right, #f1c40f, #e67e22); color: white; border: none; border-radius: 30px; cursor: pointer; z-index: 2000; font-weight: bold; box-shadow: 0 10px 30px rgba(230, 126, 34, 0.5); letter-spacing: 2px; transition: transform 0.2s; }
+        #start-btn:hover { transform: translate(-50%, -55%); }
+
+        .shake { animation: shake 0.5s; }
+        @keyframes shake { 0% { transform: translate(5px, 5px); } 20% { transform: translate(-5px, -5px); } 40% { transform: translate(5px, -5px); } 60% { transform: translate(-5px, 5px); } 80% { transform: translate(5px, 5px); } 100% { transform: translate(0, 0); } }
+    </style>
+</head>
+<body>
+
+    <div id="game-viewport">
+        <div class="bg-mountains" id="bg-mountains"></div>
+        
+        <div id="world">
+            <div class="ground"></div>
+            
+            <div id="house">
+                <div class="roof"></div>
+                <div class="walls"></div>
+            </div>
+            
+            <div id="river"></div>
+            <!-- 实体化停靠船只 -->
+            <div id="boat">
+                <div class="boat-mast"></div>
+                <div class="boat-sail"></div>
+                <div class="boat-body"></div>
+            </div>
+            
+            <!-- 精细建模遗迹 -->
+            <div id="ruins">
+                <div class="ruins-arch"></div>
+                <div class="ruins-wall"></div>
+                <div class="ruins-base"></div>
+            </div>
+            
+            <div id="chest" style="position:absolute; left: 320vw; bottom: 20vh; width: 60px; height: 45px; z-index: 91; display: none; background: linear-gradient(to bottom, #f1c40f, #d35400); border: 3px solid #e67e22; border-radius: 5px; box-shadow: 0 0 30px rgba(241,196,15,0.8); animation: pulse 1.5s infinite alternate;"></div>
+
+            <div id="hero">
+                <div class="hero-cape"></div>
+                <div class="hero-hair"></div>
+                <div class="hero-head"></div>
+            </div>
+        </div>
+
+        <!-- 迷宫 -->
+        <div id="maze-layer">
+            <h2 style="color:#f1c40f; letter-spacing:2px;">☩ 寻找出口的线索 ☩</h2>
+            <canvas id="maze-canvas" width="930" height="630"></canvas>
+            <div id="maze-hint">使用 [WASD] 移动，找到发光的绿色出口</div>
+        </div>
+
+        <!-- 战斗 -->
+        <div id="combat-overlay">
+            <div class="combat-char" id="combat-hero">
+                <div class="hp-bar-container"><div class="hp-fill hp-green" id="hero-hp-fill"></div></div>
+                <div class="combat-hero-body"></div>
+                <div class="shield" id="shield"></div>
+            </div>
+            <div class="combat-char combat-guardian" id="combat-guardian">
+                <div class="hp-bar-container"><div class="hp-fill hp-red" id="guardian-hp-fill"></div></div>
+                <div class="attack-warning" id="attack-warning">攻击预警！</div>
+                <div class="guardian-body"><div class="guardian-eye"></div></div>
+                <div class="guardian-arm left"></div>
+                <div class="guardian-arm right"></div>
+            </div>
+        </div>
+
+        <div id="game-over-screen">
+            <h1>游 戏 结 束</h1>
+            <button id="restart-btn" onclick="location.reload()">重 新 开 始</button>
+        </div>
+
+        <div id="ui-layer">
+            <div id="dialog-box">文本...</div>
+            <div id="prompt">按 [F] 交互</div>
+        </div>
+
+        <button id="start-btn" onclick="initGame()">开启旅途</button>
+    </div>
+
+    <script>
+        const state = {
+            mode: 'EXPLORE', // EXPLORE, MAZE, BOAT, COMBAT, END
+            heroX: 10, speed: 0.4, isRight: true,
+            keys: { a: false, d: false },
+            canInteract: false, currentTarget: '',
+            hasClue: false,
+            heroHP: 3, guardHP: 3, isBlocking: false, canAttack: true
+        };
+
+        const ui = {
+            world: document.getElementById('world'), bgMountains: document.getElementById('bg-mountains'),
+            hero: document.getElementById('hero'), boat: document.getElementById('boat'),
+            prompt: document.getElementById('prompt'), dialog: document.getElementById('dialog-box'),
+            mazeLayer: document.getElementById('maze-layer'), combatOverlay: document.getElementById('combat-overlay'),
+            combatHero: document.getElementById('combat-hero'), combatGuard: document.getElementById('combat-guardian'),
+            shield: document.getElementById('shield'), heroHpFill: document.getElementById('hero-hp-fill'),
+            guardHpFill: document.getElementById('guardian-hp-fill'), warning: document.getElementById('attack-warning'),
+            gameOverScreen: document.getElementById('game-over-screen')
+        };
+
+        const sleep = ms => new Promise(r => setTimeout(r, ms));
+        async function showText(text, duration = 2000) {
+            ui.dialog.innerText = text; ui.dialog.style.opacity = 1;
+            await sleep(duration); ui.dialog.style.opacity = 0; await sleep(200);
+        }
+
+        // ================= 探索逻辑 =================
+        function gameLoop() {
+            if (state.mode === 'EXPLORE') {
+                let move = 0;
+                if (state.keys.d) move = 1;
+                if (state.keys.a) move = -1;
+                
+                if (move !== 0) {
+                    state.heroX += move * state.speed;
+                    state.isRight = move > 0;
+                    if(!ui.hero.classList.contains('walking')) ui.hero.classList.add('walking');
+                } else {
+                    ui.hero.classList.remove('walking');
+                }
+
+                state.heroX = Math.max(5, Math.min(state.heroX, 330));
+                ui.hero.style.left = `${state.heroX}vw`;
+                ui.hero.style.transform = `scaleX(${state.isRight ? 1 : -1})`;
+                
+                const offset = -state.heroX + 20;
+                ui.world.style.transform = `translateX(${offset}vw)`;
+                ui.bgMountains.style.transform = `translateX(${offset / 3}vw)`;
+
+                checkInteract();
+            }
+            requestAnimationFrame(gameLoop);
+        }
+
+        function checkInteract() {
+            ui.prompt.style.display = 'none';
+            state.canInteract = false;
+            const x = state.heroX;
+            
+            if (x > 70 && x < 90 && !state.hasClue) { 
+                state.canInteract = true; state.currentTarget = 'HOUSE'; ui.prompt.innerText = "按 [F] 进入小屋"; 
+            } else if (x > 145 && x < 155 && state.hasClue) { 
+                // 靠近岸边的小船
+                state.canInteract = true; state.currentTarget = 'BOAT'; ui.prompt.innerText = "按 [F] 登船"; 
+            } else if (x > 250 && x < 265) { 
+                state.canInteract = true; state.currentTarget = 'RUINS'; ui.prompt.innerText = "按 [F] 进入遗迹"; 
+            }
+
+            if (state.canInteract) ui.prompt.style.display = 'block';
+        }
+
+        // ================= 输入监听 =================
+        window.addEventListener('keydown', e => {
+            const k = e.key.toLowerCase();
+            if (state.mode === 'EXPLORE') {
+                if (k === 'a') state.keys.a = true;
+                if (k === 'd') state.keys.d = true;
+                if (k === 'f' && state.canInteract) triggerInteraction();
+            }
+            if (state.mode === 'COMBAT' && k === 'e') startBlock();
+        });
+
+        window.addEventListener('keyup', e => {
+            const k = e.key.toLowerCase();
+            if (k === 'a') state.keys.a = false;
+            if (k === 'd') state.keys.d = false;
+            if (state.mode === 'COMBAT' && k === 'e') endBlock();
+        });
+
+        window.addEventListener('mousedown', e => {
+            if (e.button === 0 && state.mode === 'COMBAT') heroAttack();
+        });
+
+        async function triggerInteraction() {
+            if (state.currentTarget === 'HOUSE') startMaze();
+            else if (state.currentTarget === 'BOAT') startBoat();
+            else if (state.currentTarget === 'RUINS') startCombat();
+        }
+
+        // ================= 超复杂迷宫系统 (回溯+分块) =================
+        let mazeGrid = [];
+        let playerPos = { x: 1, y: 1 };
+        const cellSize = 30;
+        const cols = 31; // 奇数
+        const rows = 21; // 奇数
+
+        async function startMaze() {
+            state.mode = 'MAZE';
+            ui.mazeLayer.style.display = 'flex';
+            generateComplexMaze();
+            drawMaze();
+            await showText("寻找出口，拿到线索！");
+        }
+
+        function generateComplexMaze() {
+            mazeGrid = Array(rows).fill().map(() => Array(cols).fill(1)); // 全是墙
+            const stack = [{x: 1, y: 1}];
+            mazeGrid[1][1] = 0;
+
+            while (stack.length > 0) {
+                const current = stack[stack.length - 1];
+                const neighbors = [];
+                const dirs = [{dx: 0, dy: -2}, {dx: 0, dy: 2}, {dx: -2, dy: 0}, {dx: 2, dy: 0}];
+                
+                for (let d of dirs) {
+                    const nx = current.x + d.dx, ny = current.y + d.dy;
+                    if (nx > 0 && nx < cols-1 && ny > 0 && ny < rows-1 && mazeGrid[ny][nx] === 1) {
+                        neighbors.push({x: nx, y: ny, dx: d.dx, dy: d.dy});
+                    }
+                }
+
+                if (neighbors.length > 0) {
+                    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    mazeGrid[current.y + next.dy/2][current.x + next.dx/2] = 0;
+                    mazeGrid[next.y][next.x] = 0;
+                    stack.push({x: next.x, y: next.y});
+                } else {
+                    // 制造环状回路，增加难度
+                    if (Math.random() < 0.3) {
+                        const checkDirs = dirs.filter(d => {
+                            const nx = current.x + d.dx/2, ny = current.y + d.dy/2;
+                            return nx > 0 && nx < cols-1 && ny > 0 && ny < rows-1 && mazeGrid[ny][nx] === 1;
+                        });
+                        if (checkDirs.length > 0) {
+                            const rd = checkDirs[Math.floor(Math.random() * checkDirs.length)];
+                            mazeGrid[current.y + rd.dy/2][current.x + rd.dx/2] = 0;
+                        }
+                    }
+                    stack.pop();
+                }
+            }
+            mazeGrid[rows-2][cols-2] = 2; // 出口
+            playerPos = { x: 1, y: 1 };
+        }
+
+        function drawMaze() {
+            const canvas = document.getElementById('maze-canvas');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            for (let y = 0; y < rows; y++) {
+                for (let x = 0; x < cols; x++) {
+                    if (mazeGrid[y][x] === 1) ctx.fillStyle = '#2c3e50'; 
+                    else if (mazeGrid[y][x] === 0) ctx.fillStyle = '#ecf0f1'; 
+                    else if (mazeGrid[y][x] === 2) ctx.fillStyle = '#2ecc71'; 
+                    ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+                }
+            }
+            ctx.fillStyle = '#e74c3c';
+            ctx.beginPath();
+            ctx.arc(playerPos.x * cellSize + cellSize/2, playerPos.y * cellSize + cellSize/2, cellSize/2 - 4, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        window.addEventListener('keydown', e => {
+            if (state.mode !== 'MAZE') return;
+            const k = e.key.toLowerCase();
+            let nx = playerPos.x, ny = playerPos.y;
+            if (k === 'w') ny--;
+            if (k === 's') ny++;
+            if (k === 'a') nx--;
+            if (k === 'd') nx++;
+
+            if (mazeGrid[ny] && mazeGrid[ny][nx] !== 1) {
+                playerPos.x = nx; playerPos.y = ny;
+                drawMaze();
+                if (mazeGrid[ny][nx] === 2) endMaze();
+            }
+        });
+
+        async function endMaze() {
+            state.mode = 'EXPLORE';
+            ui.mazeLayer.style.display = 'none';
+            state.hasClue = true;
+            state.heroX = 95;
+            ui.hero.style.left = `${state.heroX}vw`;
+            await showText("你拿到了关键线索！前方有河流阻隔。");
+        }
+
+        // ================= 真实的划船渡河 =================
+        async function startBoat() {
+            state.mode = 'IDLE';
+            ui.prompt.style.display = 'none';
+            
+            // 主角上船：主角隐藏，船出现在主角脚下
+            ui.hero.style.display = 'none';
+            ui.boat.style.left = `${state.heroX}vw`;
+            
+            await showText("你登上了小船，开始渡河。");
+            
+            // 船向右滑动
+            ui.boat.style.left = "190vw";
+            
+            // 世界视角跟随船移动
+            for(let i=0; i<70; i++) {
+                state.heroX += 0.5;
+                ui.world.style.transform = `translateX(${-state.heroX + 20}vw)`;
+                ui.bgMountains.style.transform = `translateX(${(-state.heroX + 20) / 3}vw)`;
+                await sleep(40);
+            }
+            
+            // 下船
+            ui.hero.style.display = 'block';
+            ui.boat.style.display = 'none'; // 船留在河边
+            state.heroX = 190;
+            state.mode = 'EXPLORE';
+            await showText("成功到达对岸！遗迹就在前方。");
+        }
+
+        // ================= 战斗系统 =================
+        async function startCombat() {
+            state.mode = 'COMBAT';
+            state.heroHP = 3; state.guardHP = 3;
+            updateCombatUI();
+            ui.combatOverlay.style.display = 'flex';
+            await showText("遗迹守卫被唤醒了！\n预警时按住 [E] 格挡，鼠标左键攻击", 3000);
+            guardianAI(); 
+        }
+
+        function updateCombatUI() {
+            ui.heroHpFill.style.width = `${(state.heroHP / 3) * 100}%`;
+            ui.guardHpFill.style.width = `${(state.guardHP / 3) * 100}%`;
+        }
+
+        function heroAttack() {
+            if (!state.canAttack || state.mode !== 'COMBAT') return;
+            state.canAttack = false;
+            
+            const slash = document.createElement('div');
+            slash.className = 'slash';
+            slash.style.right = '20vw'; slash.style.bottom = '30vh';
+            document.querySelector('#combat-overlay').appendChild(slash);
+            
+            state.guardHP--; updateCombatUI();
+            ui.combatGuard.style.transform = 'translateX(30px)';
+            setTimeout(() => ui.combatGuard.style.transform = 'translateX(0)', 100);
+
+            setTimeout(() => { slash.remove(); state.canAttack = true; }, 300);
+            if (state.guardHP <= 0) winCombat();
+        }
+
+        function startBlock() { if (state.mode === 'COMBAT') { state.isBlocking = true; ui.shield.style.display = 'block'; } }
+        function endBlock() { state.isBlocking = false; ui.shield.style.display = 'none'; }
+
+        async function guardianAI() {
+            while (state.mode === 'COMBAT' && state.guardHP > 0) {
+                await sleep(1500);
+                if (state.mode !== 'COMBAT') break;
+                ui.warning.style.display = 'block';
+                await sleep(600);
+                ui.warning.style.display = 'none';
+
+                ui.combatGuard.style.transform = 'translateX(-40vw)';
+                await sleep(300); 
+                
+                if (state.isBlocking) {
+                    await showText("完美格挡！", 800);
+                    ui.combatHero.style.filter = "drop-shadow(0 0 20px #3498db)";
+                } else {
+                    state.heroHP--; updateCombatUI();
+                    await showText("受到猛烈冲击！", 800);
+                    document.getElementById('game-viewport').classList.add('shake');
+                    setTimeout(() => document.getElementById('game-viewport').classList.remove('shake'), 500);
+                    if (state.heroHP <= 0) { await heroDie(); return; }
+                }
+                ui.combatGuard.style.transform = 'translateX(0)';
+                setTimeout(() => ui.combatHero.style.filter = "", 300);
+                await sleep(500);
+            }
+        }
+
+        async function heroDie() {
+            state.mode = 'IDLE';
+            await showText("你被击败了...\n时间回溯，再次挑战！", 3000);
+            startCombat(); 
+        }
+
+        async function winCombat() {
+            state.mode = 'IDLE';
+            ui.combatGuard.style.transform = 'rotate(80deg) translateY(100px)';
+            ui.combatGuard.style.opacity = '0';
+            ui.combatGuard.style.transition = 'all 1s';
+            
+            await showText("守卫崩碎了，前方闪耀着宝箱的光芒...");
+            ui.combatOverlay.style.display = 'none';
+            state.mode = 'EXPLORE';
+            state.heroX = 280; ui.hero.style.left = `${state.heroX}vw`;
+            
+            document.getElementById('chest').style.display = 'block';
+            
+            await sleep(1000);
+            state.heroX = 315; ui.hero.style.left = `${state.heroX}vw`;
+            ui.world.style.transform = `translateX(${-state.heroX + 20}vw)`;
+            await showText("🎉 你找到了尘封已久的终极宝箱！", 2000);
+            endGame();
+        }
+
+        // ================= 结局 =================
+        function endGame() {
+            state.mode = 'END';
+            ui.gameOverScreen.style.display = 'flex';
+            setTimeout(() => { ui.gameOverScreen.style.opacity = '1'; }, 100);
+            document.getElementById('game-viewport').style.background = 'radial-gradient(circle at center, #f1c40f 0%, #000 100%)';
+        }
+
+        function initGame() {
+            document.getElementById('start-btn').style.display = 'none';
+            requestAnimationFrame(gameLoop);
+            showText("使用 A/D 键移动，靠近目标按 F 交互。", 3000);
+        }
+    </script>
+</body>
+</html>
